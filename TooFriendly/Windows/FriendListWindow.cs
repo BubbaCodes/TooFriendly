@@ -115,100 +115,118 @@ public sealed class FriendListWindow : Window
 
         if (ImGui.BeginChild("FriendRecords", new Vector2(0, 230), true))
         {
-            var clipper = new ImGuiListClipper();
-            clipper.Begin(configuration.Friends.Count);
             var friendRemoved = false;
-            while (clipper.Step())
+            if (ImGui.BeginTable(
+                    "FriendRecordsTable",
+                    5,
+                    ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.NoSavedSettings))
             {
-                for (var i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                ImGui.TableSetupColumn("Character", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 145f);
+                ImGui.TableSetupColumn("Check", ImGuiTableColumnFlags.WidthFixed, 48f);
+                ImGui.TableSetupColumn("Edit", ImGuiTableColumnFlags.WidthFixed, 40f);
+                ImGui.TableSetupColumn("Remove", ImGuiTableColumnFlags.WidthFixed, 58f);
+
+                var clipper = new ImGuiListClipper();
+                clipper.Begin(configuration.Friends.Count);
+                while (clipper.Step())
                 {
-                    var friend = configuration.Friends[i];
-                    ImGui.PushID(friend.Id.ToString());
-                    var selected = ReferenceEquals(selectedFriend, friend);
-                    if (friend.IsGameFriend)
+                    for (var i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                     {
+                        var friend = configuration.Friends[i];
+                        ImGui.PushID(friend.Id.ToString());
+                        ImGui.TableNextRow();
+
+                        ImGui.TableSetColumnIndex(0);
+                        var selected = ReferenceEquals(selectedFriend, friend);
+                        if (!friend.IsGameFriend)
+                        {
+                            ImGui.PushStyleColor(
+                                ImGuiCol.Text,
+                                ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor));
+                        }
+
                         if (ImGui.Selectable($"{friend.Name} - Home: {friend.World}##name", selected))
                             selectedFriend = friend;
-                    }
-                    else
-                    {
-                        ImGui.PushStyleColor(
-                            ImGuiCol.Text,
-                            ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor));
-                        if (ImGui.Selectable($"{friend.Name} - Home: {friend.World}##name", selected))
-                            selectedFriend = friend;
-                        ImGui.PopStyleColor();
-                    }
 
-                    if (nearbyFriendIds.Contains(friend.Id))
-                    {
-                        ImGui.SameLine();
-                        ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "♥");
+                        if (!friend.IsGameFriend)
+                            ImGui.PopStyleColor();
+
+                        ImGui.TableSetColumnIndex(1);
+                        if (nearbyFriendIds.Contains(friend.Id))
+                        {
+                            ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "♥");
+                            if (ImGui.IsItemHovered())
+                                ImGui.SetTooltip("Nearby in the same instance.");
+                        }
+
+                        if (friend.VerificationStatus == CharacterVerificationStatus.NotFound)
+                        {
+                            if (nearbyFriendIds.Contains(friend.Id))
+                                ImGui.SameLine();
+                            ImGui.TextColored(new Vector4(1f, 0.85f, 0.15f, 1f), "Not found");
+                            if (ImGui.IsItemHovered())
+                                ImGui.SetTooltip(friend.VerificationMessage);
+                        }
+                        else if (friend.VerificationStatus == CharacterVerificationStatus.Checking)
+                        {
+                            if (nearbyFriendIds.Contains(friend.Id))
+                                ImGui.SameLine();
+                            ImGui.TextDisabled("Checking...");
+                        }
+                        else if (!friend.IsGameFriend &&
+                                 friend.VerificationStatus == CharacterVerificationStatus.Found)
+                        {
+                            if (nearbyFriendIds.Contains(friend.Id))
+                                ImGui.SameLine();
+                            ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "Found");
+                        }
+
+                        ImGui.TableSetColumnIndex(2);
+                        if (!friend.IsGameFriend &&
+                            friend.VerificationStatus != CharacterVerificationStatus.Checking)
+                        {
+                            if (ImGui.SmallButton("Check"))
+                                queueCharacterCheck(friend);
+                            if (ImGui.IsItemHovered())
+                                ImGui.SetTooltip("Rechecks this character on the official Lodestone.");
+                        }
+
+                        ImGui.TableSetColumnIndex(3);
+                        if (ImGui.SmallButton("Edit"))
+                            BeginEditing(friend);
                         if (ImGui.IsItemHovered())
-                            ImGui.SetTooltip("Nearby in the same instance.");
-                    }
+                            ImGui.SetTooltip("Edit this saved record.");
 
-                    if (friend.VerificationStatus == CharacterVerificationStatus.NotFound)
-                    {
-                        ImGui.SameLine();
-                        ImGui.TextColored(new Vector4(1f, 0.85f, 0.15f, 1f), "⚠ Not found");
+                        ImGui.TableSetColumnIndex(4);
+                        if (ImGui.SmallButton("Remove"))
+                        {
+                            configuration.Friends.RemoveAt(i);
+                            if (ReferenceEquals(selectedFriend, friend))
+                                selectedFriend = null;
+                            if (ReferenceEquals(editingFriend, friend))
+                                CancelEditing();
+                            configuration.Save();
+                            friendRemoved = true;
+                            ImGui.PopID();
+                            break;
+                        }
                         if (ImGui.IsItemHovered())
-                            ImGui.SetTooltip(friend.VerificationMessage);
-                    }
-                    else if (friend.VerificationStatus == CharacterVerificationStatus.Checking)
-                    {
-                        ImGui.SameLine();
-                        ImGui.TextDisabled("Checking Lodestone...");
-                    }
-                    else if (!friend.IsGameFriend &&
-                             friend.VerificationStatus == CharacterVerificationStatus.Found)
-                    {
-                        ImGui.SameLine();
-                        ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "✓ Found");
-                    }
+                        {
+                            ImGui.SetTooltip(
+                                "Removes this record from TooFriendly only; it does not change your in-game friends list.");
+                        }
 
-                    if (!friend.IsGameFriend &&
-                        friend.VerificationStatus != CharacterVerificationStatus.Checking)
-                    {
-                        ImGui.SameLine();
-                        if (ImGui.SmallButton("Check"))
-                            queueCharacterCheck(friend);
-                        if (ImGui.IsItemHovered())
-                            ImGui.SetTooltip("Rechecks this character on the official Lodestone.");
-                    }
-
-                    ImGui.SameLine();
-                    if (ImGui.SmallButton("Edit"))
-                        BeginEditing(friend);
-                    if (ImGui.IsItemHovered())
-                        ImGui.SetTooltip("Edit this saved record.");
-
-                    ImGui.SameLine();
-                    if (ImGui.SmallButton("Remove"))
-                    {
-                        configuration.Friends.RemoveAt(i);
-                        if (ReferenceEquals(selectedFriend, friend))
-                            selectedFriend = null;
-                        if (ReferenceEquals(editingFriend, friend))
-                            CancelEditing();
-                        configuration.Save();
-                        friendRemoved = true;
                         ImGui.PopID();
-                        break;
-                    }
-                    if (ImGui.IsItemHovered())
-                    {
-                        ImGui.SetTooltip(
-                            "Removes this record from TooFriendly only; it does not change your in-game friends list.");
                     }
 
-                    ImGui.PopID();
+                    if (friendRemoved)
+                        break;
                 }
 
-                if (friendRemoved)
-                    break;
+                clipper.End();
+                ImGui.EndTable();
             }
-            clipper.End();
         }
         ImGui.EndChild();
 
