@@ -49,20 +49,20 @@ public sealed class WorldCatalog
         foreach (var world in dataManager.GetExcelSheet<World>())
         {
             var name = world.Name.ToString().Trim();
-            if (string.IsNullOrWhiteSpace(name) || world.DataCenter.Value.RowId == 0)
+            // Lumina's generated World.DataCenter mapping predates the sheet's column change.
+            var dataCenterId = (uint)world.Unknown0;
+            if (string.IsNullOrWhiteSpace(name) ||
+                dataCenterId == 0 ||
+                !dataCentersById.TryGetValue(dataCenterId, out var dataCenter))
                 continue;
 
-            var dataCenter = world.DataCenter.Value;
-            var regionName = dataCenter.Region.Value.Name.ToString().Trim();
             var metadata = new WorldMetadata(
                 checked((ushort)world.RowId),
                 name,
-                world.DataCenter.RowId,
-                dataCenter.Name.ToString().Trim(),
-                dataCenter.Region.RowId,
-                string.IsNullOrWhiteSpace(regionName)
-                    ? $"Region {dataCenter.Region.RowId}"
-                    : regionName);
+                dataCenter.Id,
+                dataCenter.Name,
+                dataCenter.RegionId,
+                dataCenter.Region);
 
             worldsById[metadata.Id] = metadata;
             worldsByName[metadata.Name] = metadata;
