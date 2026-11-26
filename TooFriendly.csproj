@@ -1,0 +1,11 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Author>BubbaCodes</Author>
+    <Name>TooFriendly</Name>
+    <Punchline>A local companion for your Eorzean friends list.</Punchline>
+    <Description>Keep a local list of friends, notes, and meeting locations beyond the in-game friends list limit.</Description>
+    <Tags>friends;social;notes</Tags>
+  </PropertyGroup>
+</Project>
