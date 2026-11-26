@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -8,20 +9,58 @@ namespace TooFriendly.Windows;
 public sealed class FriendListWindow : Window
 {
     private readonly Configuration configuration;
+    private readonly WorldCatalog worldCatalog;
+    private readonly Action<FriendRecord> queueCharacterCheck;
+    private readonly HashSet<Guid> nearbyFriendIds;
     private string name = string.Empty;
     private string world = string.Empty;
-    private string dataCenter = string.Empty;
     private string city = string.Empty;
     private string metNote = string.Empty;
     private string validationMessage = string.Empty;
+    private string syncWarning = string.Empty;
+    private bool wasSocialVisible;
+    private bool openedBySocial;
 
-    public FriendListWindow(Configuration configuration)
+    public FriendListWindow(
+        Configuration configuration,
+        WorldCatalog worldCatalog,
+        Action<FriendRecord> queueCharacterCheck,
+        HashSet<Guid> nearbyFriendIds)
         : base("TooFriendly##Friend List")
     {
         this.configuration = configuration;
+        this.worldCatalog = worldCatalog;
+        this.queueCharacterCheck = queueCharacterCheck;
+        this.nearbyFriendIds = nearbyFriendIds;
         Size = new Vector2(560, 480);
         SizeCondition = ImGuiCond.FirstUseEver;
     }
+
+    public void UpdateSocialDock(bool visible, Vector2? position)
+    {
+        if (visible && position.HasValue)
+        {
+            Position = position.Value;
+            PositionCondition = ImGuiCond.Always;
+            if (!wasSocialVisible)
+            {
+                openedBySocial = !IsOpen;
+                IsOpen = true;
+            }
+        }
+        else if (wasSocialVisible && openedBySocial)
+        {
+            IsOpen = false;
+            openedBySocial = false;
+        }
+
+        wasSocialVisible = visible;
+    }
+
+    public void SetSyncWarning(int omitted) =>
+        syncWarning = omitted == 0
+            ? string.Empty
+            : $"{omitted} game friend(s) were not added because the configured limit is full.";
 
     public override void Draw()
     {
@@ -29,6 +68,15 @@ public sealed class FriendListWindow : Window
         if (ImGui.InputInt("Local friend limit", ref friendLimit))
         {
             configuration.FriendLimit = Math.Clamp(friendLimit, 1, 1000);
+            configuration.Save();
+        }
+
+        var nearbyRange = configuration.NearbyRangeYalms;
+        if (ImGui.InputFloat("Nearby range (yalms)", ref nearbyRange, 5f, 10f, "%.0f"))
+        {
+            configuration.NearbyRangeYalms = float.IsFinite(nearbyRange)
+                ? Math.Clamp(nearbyRange, 5f, 200f)
+                : 100f;
             configuration.Save();
         }
 
@@ -40,17 +88,57 @@ public sealed class FriendListWindow : Window
         }
 
         ImGui.Separator();
-        ImGui.Text($"Local friends: {configuration.Friends.Count} / {configuration.FriendLimit}");
+        var gameFriends = 0;
+        foreach (var friend in configuration.Friends)
+        {
+            if (friend.IsGameFriend)
+                gameFriends++;
+        }
+
+        ImGui.Text($"Friends: {configuration.Friends.Count} / {configuration.FriendLimit} ({gameFriends} in-game)");
+        if (!string.IsNullOrEmpty(syncWarning))
+            ImGui.TextColored(new Vector4(1f, 0.65f, 0.2f, 1f), syncWarning);
+        ImGui.TextDisabled("Nearby markers only appear for players visible in your current instance.");
 
         if (ImGui.BeginChild("FriendRecords", new Vector2(0, 230), true))
         {
             for (var i = 0; i < configuration.Friends.Count; i++)
             {
                 var friend = configuration.Friends[i];
-                ImGui.PushID(i);
-                ImGui.TextColored(
-                    ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor),
-                    $"{friend.Name} @ {friend.World}");
+                ImGui.PushID(friend.Id.ToString());
+                if (friend.IsGameFriend)
+                    ImGui.Text($"{friend.Name} @ {friend.World}");
+                else
+                    ImGui.TextColored(
+                        ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor),
+                        $"{friend.Name} @ {friend.World}");
+
+                if (nearbyFriendIds.Contains(friend.Id))
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "♥");
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip("Nearby in the same instance.");
+                }
+
+                if (friend.VerificationStatus == CharacterVerificationStatus.NotFound)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(1f, 0.85f, 0.15f, 1f), "⚠ Not found");
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip(friend.VerificationMessage);
+                }
+                else if (friend.VerificationStatus == CharacterVerificationStatus.Checking)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled("Checking Lodestone...");
+                }
+                else if (!friend.IsGameFriend &&
+                         friend.VerificationStatus == CharacterVerificationStatus.Found)
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "✓ Found");
+                }
 
                 if (!string.IsNullOrWhiteSpace(friend.DataCenter) ||
                     !string.IsNullOrWhiteSpace(friend.City))
@@ -58,6 +146,20 @@ public sealed class FriendListWindow : Window
 
                 if (!string.IsNullOrWhiteSpace(friend.MetNote))
                     ImGui.TextWrapped(friend.MetNote);
+
+                if (friend.VerificationStatus == CharacterVerificationStatus.LookupFailed &&
+                    !string.IsNullOrWhiteSpace(friend.VerificationMessage))
+                {
+                    ImGui.TextColored(new Vector4(1f, 0.65f, 0.2f, 1f), friend.VerificationMessage);
+                }
+
+                if (!friend.IsGameFriend &&
+                    friend.VerificationStatus != CharacterVerificationStatus.Checking)
+                {
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("Check"))
+                        queueCharacterCheck(friend);
+                }
 
                 ImGui.SameLine();
                 if (ImGui.SmallButton("Remove"))
@@ -77,8 +179,15 @@ public sealed class FriendListWindow : Window
         ImGui.Separator();
         ImGui.Text("Add a local record");
         ImGui.InputText("Character name", ref name, 64);
-        ImGui.InputText("World", ref world, 64);
-        ImGui.InputText("Data center", ref dataCenter, 64);
+        if (ImGui.InputText("World", ref world, 64) &&
+            worldCatalog.TryGetByName(world, out var selectedWorld))
+        {
+            world = selectedWorld.Name;
+        }
+
+        if (worldCatalog.TryGetByName(world, out var metadata))
+            ImGui.TextDisabled($"Data center: {metadata.DataCenter}");
+
         ImGui.InputText("City", ref city, 64);
         ImGui.InputText("When/how you met", ref metNote, 256);
 
@@ -87,6 +196,9 @@ public sealed class FriendListWindow : Window
 
         if (ImGui.Button("Add friend"))
             AddFriend();
+
+        ImGui.Separator();
+        ImGui.TextWrapped("Character checks query the official Lodestone directly from this computer. TooFriendly does not send records to its own server.");
     }
 
     private void AddFriend()
@@ -99,6 +211,12 @@ public sealed class FriendListWindow : Window
             return;
         }
 
+        if (!worldCatalog.TryGetByName(trimmedWorld, out var metadata))
+        {
+            validationMessage = "Enter a current FFXIV Home World name.";
+            return;
+        }
+
         if (configuration.Friends.Count >= configuration.FriendLimit)
         {
             validationMessage = "The local friend limit has been reached.";
@@ -108,7 +226,8 @@ public sealed class FriendListWindow : Window
         foreach (var friend in configuration.Friends)
         {
             if (string.Equals(friend.Name, trimmedName, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(friend.World, trimmedWorld, StringComparison.OrdinalIgnoreCase))
+                (friend.HomeWorldId == metadata.Id ||
+                 string.Equals(friend.World, metadata.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 validationMessage = "That character is already in your local list.";
                 return;
@@ -118,16 +237,17 @@ public sealed class FriendListWindow : Window
         configuration.Friends.Add(new FriendRecord
         {
             Name = trimmedName,
-            World = trimmedWorld,
-            DataCenter = dataCenter.Trim(),
+            World = metadata.Name,
+            DataCenter = metadata.DataCenter,
             City = city.Trim(),
             MetNote = metNote.Trim(),
+            HomeWorldId = metadata.Id,
+            LodestoneRegionId = metadata.RegionId,
         });
         configuration.Save();
 
         name = string.Empty;
         world = string.Empty;
-        dataCenter = string.Empty;
         city = string.Empty;
         metNote = string.Empty;
         validationMessage = string.Empty;

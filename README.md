@@ -12,26 +12,14 @@ TooFriendly is a Dalamud plugin for keeping a local companion list of FFXIV frie
 3. Click **+**, enable the repository, then click **Save and Close**.
 4. Enter `/xlplugins`, search for **TooFriendly**, and click **Install**.
 
-The initial release provides a local friend list with a configurable limit (1-1,000), notes, and meeting locations (data center, world, and city). Records are stored in the plugin configuration on this computer.
+TooFriendly keeps a local companion list with a configurable limit (1-1,000), notes, and meeting locations (data center, world, and city). Records are stored in the plugin configuration on this computer.
 
-The following game integrations are not implemented yet:
+When the game's **Social → Friends** list is open, TooFriendly reads the native list and displays its companion panel beside it. Native friends are refreshed into local records, while locally stored-only friends use your chosen color. TooFriendly never writes to the game's server-backed friends list or bypasses its 200-friend limit.
 
-- Refreshing records from the game's friends list when its Social tab is opened.
-- Checking whether a character still exists and warning about unfindable characters.
-- Distinguishing the game's actual friends from locally stored-only entries and coloring the latter.
-- Showing a nearby-friend icon only when the friend is in range and in the same instance.
-- Rendering the companion list inside the game's Social tab.
+Stored-only friends are checked against the official Lodestone when needed. Requests are made directly from your computer, one at a time with a delay, and only the character name and Home World are sent to Square Enix. TooFriendly has no companion server. A character not appearing in Lodestone search is marked for review, not automatically removed; private profiles or changes to Lodestone can prevent confirmation.
 
-These features need to be implemented against supported Dalamud/game APIs and validated in-game. The local companion list will not add characters to the game's friends list or bypass its limit.
+The nearby heart appears when a friend is present in your current game instance and within the configurable range. It does not appear for friends who are offline or in another instance.
 
-## Build and release
-
-Build locally with the Dalamud SDK installed:
-
-```powershell
-dotnet build TooFriendly.slnx
-```
-
-Push a version tag matching `TooFriendly.csproj` (for example, `v0.1.1`) to build the plugin package and publish a GitHub release with the icon. The repository manifest installs the latest release asset and uses `icon.png` as the Dalamud plugin icon.
+The plugin builds against Dalamud SDK 15. Addon placement and live game behavior still need validation in an active FFXIV client.
 
 In game, the `/toofriendly` command opens the plugin window.
