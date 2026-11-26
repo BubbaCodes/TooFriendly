@@ -2,16 +2,21 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.ContextMenu;
+using Dalamud.Game.Gui.NamePlate;
 using Dalamud.IoC;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
+using Lumina.Excel.Sheets;
 using TooFriendly.Windows;
+using NativeBounds = FFXIVClientStructs.FFXIV.Common.Math.Bounds;
 
 namespace TooFriendly;
 
@@ -30,6 +35,9 @@ public sealed class Plugin : IDalamudPlugin
     internal static IChatGui ChatGui { get; private set; } = null!;
 
     [PluginService]
+    internal static IClientState ClientState { get; private set; } = null!;
+
+    [PluginService]
     internal static IDataManager DataManager { get; private set; } = null!;
 
     [PluginService]
@@ -42,15 +50,23 @@ public sealed class Plugin : IDalamudPlugin
     internal static IObjectTable ObjectTable { get; private set; } = null!;
 
     [PluginService]
+    internal static INamePlateGui NamePlateGui { get; private set; } = null!;
+
+    [PluginService]
     internal static IPluginLog PluginLog { get; private set; } = null!;
 
     private const string CommandName = "/toofriendly";
     private const uint NotFoundStatusFlag = 1u << 9;
+    private const float FriendNameplateIconSize = 14f;
+    private const float FriendNameplateIconGap = 2f;
     private readonly WindowSystem windowSystem = new("TooFriendly");
     private readonly FriendListWindow friendListWindow;
     private readonly WorldCatalog worldCatalog;
     private readonly LodestoneVerifier lodestoneVerifier;
     private readonly HashSet<Guid> nearbyFriendIds = new();
+    private readonly Dictionary<ulong, Guid> friendIdsByContentId = new();
+    private readonly Dictionary<string, Guid> friendIdsByIdentity = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<Vector2> friendNameplateIconsToDraw = new();
     private DateTime nextFriendSyncUtc;
     private DateTime nextNearbyUpdateUtc;
     private DateTime friendListOpenedUtc;
@@ -73,6 +89,7 @@ public sealed class Plugin : IDalamudPlugin
         friendListWindow = new FriendListWindow(
             Configuration,
             worldCatalog,
+            GetCurrentMeetingLocation,
             QueueManualCharacterCheck,
             nearbyFriendIds);
         windowSystem.AddWindow(friendListWindow);
@@ -85,7 +102,10 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += OnFrameworkUpdate;
         ContextMenuService.OnMenuOpened += OnMenuOpened;
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw += DrawFriendNameplateIcons;
         PluginInterface.UiBuilder.OpenMainUi += friendListWindow.Toggle;
+        NamePlateGui.OnDataUpdate += OnNamePlateDataUpdate;
+        NamePlateGui.OnPostDataUpdate += OnPostNamePlateDataUpdate;
     }
 
     public void Dispose()
@@ -93,7 +113,10 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update -= OnFrameworkUpdate;
         ContextMenuService.OnMenuOpened -= OnMenuOpened;
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw -= DrawFriendNameplateIcons;
         PluginInterface.UiBuilder.OpenMainUi -= friendListWindow.Toggle;
+        NamePlateGui.OnDataUpdate -= OnNamePlateDataUpdate;
+        NamePlateGui.OnPostDataUpdate -= OnPostNamePlateDataUpdate;
         CommandManager.RemoveHandler(CommandName);
         windowSystem.RemoveAllWindows();
         lodestoneVerifier.Dispose();
@@ -150,11 +173,15 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        var meetingLocation = GetCurrentMeetingLocation();
         Configuration.Friends.Add(new FriendRecord
         {
             Name = name,
             World = world.Name,
             DataCenter = world.DataCenter,
+            MetDataCenter = meetingLocation.DataCenter,
+            MetWorld = meetingLocation.World,
+            City = meetingLocation.Place,
             HomeWorldId = world.Id,
             LodestoneRegionId = world.RegionId,
             ContentId = contentId,
@@ -210,6 +237,8 @@ public sealed class Plugin : IDalamudPlugin
             friend.Name ??= string.Empty;
             friend.World ??= string.Empty;
             friend.DataCenter ??= string.Empty;
+            friend.MetDataCenter ??= string.Empty;
+            friend.MetWorld ??= string.Empty;
             friend.City ??= string.Empty;
             friend.MetNote ??= string.Empty;
             friend.VerificationMessage ??= string.Empty;
@@ -422,6 +451,16 @@ public sealed class Plugin : IDalamudPlugin
     private unsafe void UpdateNearbyFriends()
     {
         nearbyFriendIds.Clear();
+        friendIdsByContentId.Clear();
+        friendIdsByIdentity.Clear();
+        foreach (var friend in Configuration.Friends)
+        {
+            if (friend.ContentId != 0)
+                friendIdsByContentId[friend.ContentId] = friend.Id;
+            if (friend.HomeWorldId != 0)
+                friendIdsByIdentity[GetIdentityKey(friend.Name, friend.HomeWorldId)] = friend.Id;
+        }
+
         var localPlayer = ObjectTable.LocalPlayer;
         if (localPlayer == null)
             return;
@@ -461,6 +500,114 @@ public sealed class Plugin : IDalamudPlugin
                 nearbyFriendIds.Add(friend.Id);
             }
         }
+    }
+
+    private MeetingLocation GetCurrentMeetingLocation()
+    {
+        var localPlayer = ObjectTable.LocalPlayer;
+        if (localPlayer == null)
+            return new MeetingLocation(string.Empty, string.Empty, string.Empty);
+
+        var currentWorld = localPlayer.CurrentWorld;
+        var currentWorldId = checked((ushort)currentWorld.RowId);
+        var dataCenter = string.Empty;
+        var world = currentWorld.Value.Name.ToString().Trim();
+        if (worldCatalog.TryGetById(currentWorldId, out var metadata))
+        {
+            dataCenter = metadata.DataCenter;
+            world = metadata.Name;
+        }
+
+        var place = string.Empty;
+        var territoryType = ClientState.TerritoryType;
+        if (territoryType != 0)
+        {
+            var territory = DataManager.GetExcelSheet<TerritoryType>().GetRow(territoryType);
+            place = territory.PlaceName.Value.Name.ToString().Trim();
+        }
+
+        return new MeetingLocation(dataCenter, world, place);
+    }
+
+    private unsafe void OnPostNamePlateDataUpdate(
+        INamePlateUpdateContext _,
+        IReadOnlyList<INamePlateUpdateHandler> handlers)
+    {
+        friendNameplateIconsToDraw.Clear();
+        foreach (var handler in handlers)
+        {
+            var player = handler.PlayerCharacter;
+            if (player == null)
+                continue;
+
+            var character = (BattleChara*)player.Address;
+            if (character == null)
+                continue;
+
+            var contentId = character->ContentId;
+            Guid friendId;
+            if (contentId == 0 || !friendIdsByContentId.TryGetValue(contentId, out friendId))
+            {
+                var identity = GetIdentityKey(
+                    player.Name.ToString(),
+                    checked((ushort)character->HomeWorld));
+                if (!friendIdsByIdentity.TryGetValue(identity, out friendId))
+                    continue;
+            }
+
+            if (!nearbyFriendIds.Contains(friendId))
+                continue;
+
+            var plate = (AddonNamePlate.NamePlateObject*)handler.NamePlateObjectAddress;
+            if (plate == null || plate->RootComponentNode == null || !plate->IsVisible ||
+                !plate->IsPlayerCharacter || plate->NameText == null ||
+                !plate->NameText->IsVisible())
+                continue;
+
+            var nameNode = &plate->NameText->AtkResNode;
+            var scale = GetAccumulatedScale(nameNode);
+            ushort textWidth = 0;
+            ushort textHeight = 0;
+            plate->NameText->GetTextDrawSize(&textWidth, &textHeight, null, 0, -1, false);
+
+            NativeBounds bounds;
+            nameNode->GetBounds(&bounds);
+            var left = MathF.Min(bounds.Pos1.X, bounds.Pos2.X);
+            var top = MathF.Min(bounds.Pos1.Y, bounds.Pos2.Y);
+            var right = MathF.Max(bounds.Pos1.X, bounds.Pos2.X);
+            var bottom = MathF.Max(bounds.Pos1.Y, bounds.Pos2.Y);
+            var boxWidth = right - left;
+            var drawnWidth = MathF.Min(textWidth * scale, boxWidth);
+            if (drawnWidth <= 0 || bottom - top <= 0)
+                continue;
+
+            var textLeft = left + (boxWidth - drawnWidth) / 2f;
+            friendNameplateIconsToDraw.Add(new Vector2(
+                textLeft + (drawnWidth - FriendNameplateIconSize) / 2f,
+                top - FriendNameplateIconGap - FriendNameplateIconSize));
+        }
+    }
+
+    private static unsafe float GetAccumulatedScale(AtkResNode* node)
+    {
+        var scale = 1f;
+        for (var current = node; current != null; current = current->ParentNode)
+            scale *= current->ScaleX > 0f ? current->ScaleX : 1f;
+        return scale;
+    }
+
+    private static void OnNamePlateDataUpdate(
+        INamePlateUpdateContext _,
+        IReadOnlyList<INamePlateUpdateHandler> __)
+    {
+    }
+
+    private void DrawFriendNameplateIcons()
+    {
+        var drawList = ImGui.GetForegroundDrawList();
+        var color = ImGui.ColorConvertFloat4ToU32(new Vector4(0.35f, 1f, 0.45f, 1f));
+        foreach (var position in friendNameplateIconsToDraw)
+            drawList.AddText(ImGui.GetFont(), FriendNameplateIconSize, position, color, "♥");
     }
 
     private static bool ShouldCheckAgain(FriendRecord friend, DateTime now)

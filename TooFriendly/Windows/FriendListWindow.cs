@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -10,6 +11,7 @@ public sealed class FriendListWindow : Window
 {
     private readonly Configuration configuration;
     private readonly WorldCatalog worldCatalog;
+    private readonly Func<MeetingLocation> getMeetingLocation;
     private readonly Action<FriendRecord> queueCharacterCheck;
     private readonly HashSet<Guid> nearbyFriendIds;
     private string name = string.Empty;
@@ -24,12 +26,14 @@ public sealed class FriendListWindow : Window
     public FriendListWindow(
         Configuration configuration,
         WorldCatalog worldCatalog,
+        Func<MeetingLocation> getMeetingLocation,
         Action<FriendRecord> queueCharacterCheck,
         HashSet<Guid> nearbyFriendIds)
         : base("TooFriendly##Friend List")
     {
         this.configuration = configuration;
         this.worldCatalog = worldCatalog;
+        this.getMeetingLocation = getMeetingLocation;
         this.queueCharacterCheck = queueCharacterCheck;
         this.nearbyFriendIds = nearbyFriendIds;
         Size = new Vector2(560, 480);
@@ -140,9 +144,14 @@ public sealed class FriendListWindow : Window
                     ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "✓ Found");
                 }
 
-                if (!string.IsNullOrWhiteSpace(friend.DataCenter) ||
-                    !string.IsNullOrWhiteSpace(friend.City))
-                    ImGui.TextDisabled($"{friend.DataCenter} - {friend.City}");
+                var meetingDetails = string.Join(
+                    " / ",
+                    new[] { friend.MetDataCenter, friend.MetWorld, friend.City }
+                        .Where(value => !string.IsNullOrWhiteSpace(value)));
+                if (!string.IsNullOrWhiteSpace(meetingDetails))
+                    ImGui.TextDisabled($"Met: {meetingDetails}");
+                else if (!string.IsNullOrWhiteSpace(friend.DataCenter))
+                    ImGui.TextDisabled($"Home data center: {friend.DataCenter}");
 
                 if (!string.IsNullOrWhiteSpace(friend.MetNote))
                     ImGui.TextWrapped(friend.MetNote);
@@ -188,7 +197,16 @@ public sealed class FriendListWindow : Window
         if (worldCatalog.TryGetByName(world, out var metadata))
             ImGui.TextDisabled($"Data center: {metadata.DataCenter}");
 
-        ImGui.InputText("City", ref city, 64);
+        var currentMeetingLocation = getMeetingLocation();
+        var currentMeetingDetails = string.Join(
+            " / ",
+            new[] { currentMeetingLocation.DataCenter, currentMeetingLocation.World, currentMeetingLocation.Place }
+                .Where(value => !string.IsNullOrWhiteSpace(value)));
+        ImGui.TextDisabled(
+            string.IsNullOrWhiteSpace(currentMeetingDetails)
+                ? "Meeting location: unavailable"
+                : $"Meeting location: {currentMeetingDetails}");
+        ImGui.InputText("Location (optional override)", ref city, 64);
         ImGui.InputText("When/how you met", ref metNote, 256);
 
         if (!string.IsNullOrEmpty(validationMessage))
@@ -234,12 +252,15 @@ public sealed class FriendListWindow : Window
             }
         }
 
+        var meetingLocation = getMeetingLocation();
         configuration.Friends.Add(new FriendRecord
         {
             Name = trimmedName,
             World = metadata.Name,
             DataCenter = metadata.DataCenter,
-            City = city.Trim(),
+            MetDataCenter = meetingLocation.DataCenter,
+            MetWorld = meetingLocation.World,
+            City = string.IsNullOrWhiteSpace(city) ? meetingLocation.Place : city.Trim(),
             MetNote = metNote.Trim(),
             HomeWorldId = metadata.Id,
             LodestoneRegionId = metadata.RegionId,

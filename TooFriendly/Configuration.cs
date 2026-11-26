@@ -36,6 +36,8 @@ public sealed class FriendRecord
     public string Name { get; set; } = string.Empty;
     public string World { get; set; } = string.Empty;
     public string DataCenter { get; set; } = string.Empty;
+    public string MetWorld { get; set; } = string.Empty;
+    public string MetDataCenter { get; set; } = string.Empty;
     public string City { get; set; } = string.Empty;
     public string MetNote { get; set; } = string.Empty;
     public ushort HomeWorldId { get; set; }
@@ -46,3 +48,5 @@ public sealed class FriendRecord
     public DateTime? LastCheckedUtc { get; set; }
     public string VerificationMessage { get; set; } = string.Empty;
 }
+
+public sealed record MeetingLocation(string DataCenter, string World, string Place);
