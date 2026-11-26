@@ -277,7 +277,7 @@ public sealed class FriendListWindow : Window
         {
             ImGui.InputText("Character name", ref name, 64);
 
-            var regions = worldCatalog.Worlds
+            var regions = worldCatalog.DataCenters
                 .Select(metadata => metadata.Region)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -289,12 +289,12 @@ public sealed class FriendListWindow : Window
                 validationMessage = string.Empty;
             }
 
-            var dataCenters = worldCatalog.Worlds
+            var dataCenters = worldCatalog.DataCenters
                 .Where(metadata => string.Equals(
                     metadata.Region,
                     region,
                     StringComparison.OrdinalIgnoreCase))
-                .Select(metadata => metadata.DataCenter)
+                .Select(metadata => metadata.Name)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             ImGui.BeginDisabled(string.IsNullOrWhiteSpace(region));
@@ -317,8 +317,13 @@ public sealed class FriendListWindow : Window
                     string.Equals(metadata.DataCenter, dataCenter, StringComparison.OrdinalIgnoreCase))
                 .Select(metadata => metadata.Name)
                 .ToArray();
-            ImGui.BeginDisabled(string.IsNullOrWhiteSpace(dataCenter));
-            if (DrawCombo("World (Server)", "Select a world", world, worlds, out var selectedWorld))
+            ImGui.BeginDisabled(worlds.Length == 0);
+            if (DrawCombo(
+                    "World (Server)",
+                    worlds.Length == 0 ? "No worlds available" : "Select a world",
+                    world,
+                    worlds,
+                    out var selectedWorld))
             {
                 world = selectedWorld;
                 validationMessage = string.Empty;
