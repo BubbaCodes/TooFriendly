@@ -127,7 +127,7 @@ public sealed class FriendListWindow : Window
                     var selected = ReferenceEquals(selectedFriend, friend);
                     if (friend.IsGameFriend)
                     {
-                        if (ImGui.Selectable($"{friend.Name} @ {friend.World}##name", selected))
+                        if (ImGui.Selectable($"{friend.Name} - Home: {friend.World}##name", selected))
                             selectedFriend = friend;
                     }
                     else
@@ -135,7 +135,7 @@ public sealed class FriendListWindow : Window
                         ImGui.PushStyleColor(
                             ImGuiCol.Text,
                             ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor));
-                        if (ImGui.Selectable($"{friend.Name} @ {friend.World}##name", selected))
+                        if (ImGui.Selectable($"{friend.Name} - Home: {friend.World}##name", selected))
                             selectedFriend = friend;
                         ImGui.PopStyleColor();
                     }

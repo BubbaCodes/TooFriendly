@@ -53,6 +53,9 @@ public sealed class Plugin : IDalamudPlugin
     internal static INamePlateGui NamePlateGui { get; private set; } = null!;
 
     [PluginService]
+    internal static IPlayerState PlayerState { get; private set; } = null!;
+
+    [PluginService]
     internal static IPluginLog PluginLog { get; private set; } = null!;
 
     private const string CommandName = "/toofriendly";
@@ -536,15 +539,11 @@ public sealed class Plugin : IDalamudPlugin
 
     private MeetingLocation GetCurrentMeetingLocation()
     {
-        var localPlayer = ObjectTable.LocalPlayer;
-        if (localPlayer == null)
-            return new MeetingLocation(string.Empty, string.Empty, string.Empty);
-
-        var currentWorld = localPlayer.CurrentWorld;
+        var currentWorld = PlayerState.CurrentWorld;
         var currentWorldId = checked((ushort)currentWorld.RowId);
         var dataCenter = string.Empty;
-        var world = currentWorld.Value.Name.ToString().Trim();
-        if (worldCatalog.TryGetById(currentWorldId, out var metadata))
+        var world = string.Empty;
+        if (currentWorldId != 0 && worldCatalog.TryGetById(currentWorldId, out var metadata))
         {
             dataCenter = metadata.DataCenter;
             world = metadata.Name;
