@@ -1,0 +1,23 @@
+[
+  {
+    "Author": "BubbaCodes",
+    "Name": "TooFriendly",
+    "Description": "Keep a local list of friends, notes, and meeting locations beyond the in-game friends list limit.",
+    "Punchline": "A local companion for your Eorzean friends list.",
+    "InternalName": "TooFriendly",
+    "AssemblyVersion": "0.1.0.0",
+    "RepoUrl": "https://github.com/BubbaCodes/TooFriendly",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "friends",
+      "social",
+      "notes"
+    ],
+    "DalamudApiLevel": 15,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadLinkInstall": "https://github.com/BubbaCodes/TooFriendly/releases/latest/download/TooFriendly.zip",
+    "DownloadLinkTesting": "https://github.com/BubbaCodes/TooFriendly/releases/latest/download/TooFriendly.zip",
+    "DownloadLinkUpdate": "https://github.com/BubbaCodes/TooFriendly/releases/latest/download/TooFriendly.zip"
+  }
+]

@@ -1,0 +1,68 @@
+name: Release TooFriendly
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download Dalamud
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+          Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
+
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          [xml]$project = Get-Content '.\TooFriendly.csproj' -Raw
+          $projectVersion = $project.Project.PropertyGroup.Version
+          if ($tagVersion -ne $projectVersion) {
+            throw "Release tag version '$tagVersion' does not match project version '$projectVersion'."
+          }
+          $repository = Get-Content '.\repo.json' -Raw | ConvertFrom-Json
+          if ($repository.Count -ne 1) {
+            throw "repo.json must contain exactly one plugin entry."
+          }
+
+      - name: Build plugin
+        run: dotnet build .\TooFriendly.slnx --configuration Release
+
+      - name: Package plugin
+        shell: pwsh
+        run: |
+          $packageDirectory = '.\bin\Release\TooFriendly'
+          $pluginManifestPath = Join-Path $packageDirectory 'TooFriendly.json'
+          $packagePath = Join-Path $packageDirectory 'latest.zip'
+          if (-not (Test-Path $pluginManifestPath)) {
+            throw "Plugin manifest not found at $pluginManifestPath"
+          }
+          if (-not (Test-Path $packagePath)) {
+            throw "Dalamud package not found at $packagePath"
+          }
+          $pluginManifest = Get-Content $pluginManifestPath -Raw | ConvertFrom-Json
+          $repository = Get-Content '.\repo.json' -Raw | ConvertFrom-Json
+          if ($repository[0].AssemblyVersion -ne $pluginManifest.AssemblyVersion) {
+            throw "repo.json AssemblyVersion '$($repository[0].AssemblyVersion)' does not match plugin manifest version '$($pluginManifest.AssemblyVersion)'."
+          }
+          Copy-Item $packagePath '.\TooFriendly.zip' -Force
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$env:GITHUB_REF_NAME" .\TooFriendly.zip --title "TooFriendly $env:GITHUB_REF_NAME" --notes "Dalamud plugin release."
