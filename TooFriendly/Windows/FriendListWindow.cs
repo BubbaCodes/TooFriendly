@@ -15,6 +15,8 @@ public sealed class FriendListWindow : Window
     private readonly Action<FriendRecord> queueCharacterCheck;
     private readonly HashSet<Guid> nearbyFriendIds;
     private string name = string.Empty;
+    private string region = string.Empty;
+    private string dataCenter = string.Empty;
     private string world = string.Empty;
     private string city = string.Empty;
     private string metNote = string.Empty;
@@ -275,47 +277,53 @@ public sealed class FriendListWindow : Window
         {
             ImGui.InputText("Character name", ref name, 64);
 
-            var hasSelectedWorld = worldCatalog.TryGetByName(world, out var selectedWorld);
-            var worldPreview = hasSelectedWorld
-                ? $"{selectedWorld.Name} ({selectedWorld.DataCenter})"
-                : "Select a Home World";
-            if (ImGui.BeginCombo("Home World", worldPreview))
+            var regions = worldCatalog.Worlds
+                .Select(metadata => metadata.Region)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (DrawCombo("Region", "Select a region", region, regions, out var selectedRegion))
             {
-                foreach (var regionGroup in worldCatalog.Worlds.GroupBy(
-                             metadata => metadata.Region,
-                             StringComparer.OrdinalIgnoreCase))
-                {
-                    ImGui.Separator();
-                    ImGui.TextDisabled(regionGroup.Key);
-                    foreach (var dataCenterGroup in regionGroup.GroupBy(
-                                 metadata => metadata.DataCenter,
-                                 StringComparer.OrdinalIgnoreCase))
-                    {
-                        ImGui.TextDisabled(dataCenterGroup.Key);
-                        foreach (var metadata in dataCenterGroup)
-                        {
-                            var isSelected = string.Equals(
-                                world,
-                                metadata.Name,
-                                StringComparison.OrdinalIgnoreCase);
-                            if (ImGui.Selectable(
-                                    $"{metadata.Name}##home-world-{metadata.Id}",
-                                    isSelected))
-                            {
-                                world = metadata.Name;
-                            }
-
-                            if (isSelected)
-                                ImGui.SetItemDefaultFocus();
-                        }
-                    }
-                }
-
-                ImGui.EndCombo();
+                region = selectedRegion;
+                dataCenter = string.Empty;
+                world = string.Empty;
+                validationMessage = string.Empty;
             }
 
-            if (hasSelectedWorld)
-                ImGui.TextDisabled($"Home Data Center: {selectedWorld.DataCenter}");
+            var dataCenters = worldCatalog.Worlds
+                .Where(metadata => string.Equals(
+                    metadata.Region,
+                    region,
+                    StringComparison.OrdinalIgnoreCase))
+                .Select(metadata => metadata.DataCenter)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            ImGui.BeginDisabled(string.IsNullOrWhiteSpace(region));
+            if (DrawCombo(
+                    "Data Center",
+                    "Select a data center",
+                    dataCenter,
+                    dataCenters,
+                    out var selectedDataCenter))
+            {
+                dataCenter = selectedDataCenter;
+                world = string.Empty;
+                validationMessage = string.Empty;
+            }
+            ImGui.EndDisabled();
+
+            var worlds = worldCatalog.Worlds
+                .Where(metadata =>
+                    string.Equals(metadata.Region, region, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(metadata.DataCenter, dataCenter, StringComparison.OrdinalIgnoreCase))
+                .Select(metadata => metadata.Name)
+                .ToArray();
+            ImGui.BeginDisabled(string.IsNullOrWhiteSpace(dataCenter));
+            if (DrawCombo("World (Server)", "Select a world", world, worlds, out var selectedWorld))
+            {
+                world = selectedWorld;
+                validationMessage = string.Empty;
+            }
+            ImGui.EndDisabled();
         }
 
         if (!isEditing)
@@ -356,7 +364,19 @@ public sealed class FriendListWindow : Window
         editingFriend = friend;
         selectedFriend = friend;
         name = friend.Name;
-        world = friend.World;
+        if (worldCatalog.TryGetByName(friend.World, out var metadata))
+        {
+            region = metadata.Region;
+            dataCenter = metadata.DataCenter;
+            world = metadata.Name;
+        }
+        else
+        {
+            region = string.Empty;
+            dataCenter = string.Empty;
+            world = string.Empty;
+        }
+
         city = friend.City;
         metNote = friend.MetNote;
         validationMessage = string.Empty;
@@ -366,6 +386,8 @@ public sealed class FriendListWindow : Window
     {
         editingFriend = null;
         name = string.Empty;
+        region = string.Empty;
+        dataCenter = string.Empty;
         world = string.Empty;
         city = string.Empty;
         metNote = string.Empty;
@@ -384,9 +406,11 @@ public sealed class FriendListWindow : Window
             return;
         }
 
-        if (!worldCatalog.TryGetByName(trimmedWorld, out var metadata))
+        if (!worldCatalog.TryGetByName(trimmedWorld, out var metadata) ||
+            !string.Equals(metadata.Region, region, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(metadata.DataCenter, dataCenter, StringComparison.OrdinalIgnoreCase))
         {
-            validationMessage = "Select a current FFXIV Home World.";
+            validationMessage = "Select a Region, Data Center, and World.";
             return;
         }
 
@@ -464,5 +488,37 @@ public sealed class FriendListWindow : Window
         }
 
         configuration.Save();
+    }
+
+    private static bool DrawCombo(
+        string label,
+        string placeholder,
+        string selected,
+        IReadOnlyList<string> options,
+        out string selection)
+    {
+        selection = selected;
+        var preview = options.FirstOrDefault(option =>
+            string.Equals(option, selected, StringComparison.OrdinalIgnoreCase)) ?? placeholder;
+        if (!ImGui.BeginCombo(label, preview))
+            return false;
+
+        var changed = false;
+        for (var i = 0; i < options.Count; i++)
+        {
+            var option = options[i];
+            var isSelected = string.Equals(option, selected, StringComparison.OrdinalIgnoreCase);
+            if (ImGui.Selectable($"{option}##{label}-{i}", isSelected) && !isSelected)
+            {
+                selection = option;
+                changed = true;
+            }
+
+            if (isSelected)
+                ImGui.SetItemDefaultFocus();
+        }
+
+        ImGui.EndCombo();
+        return changed;
     }
 }

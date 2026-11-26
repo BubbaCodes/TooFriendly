@@ -12,7 +12,7 @@ TooFriendly is a Dalamud plugin for keeping a local companion list of FFXIV frie
 3. Click **+**, enable the repository, then click **Save and Close**.
 4. Enter `/xlplugins`, search for **TooFriendly**, and click **Install**.
 
-TooFriendly keeps a local companion list with a configurable limit (1-1,000), notes, and meeting locations. Its Home World selector is populated from the worlds in the installed game data, including each world's data center and physical region, rather than a hardcoded server list. Existing records refresh their world metadata from that catalog when the plugin starts.
+TooFriendly keeps a local companion list with a configurable limit (1-1,000), notes, and meeting locations. Choose a physical region, data center, and Home World/server from separate cascading selectors populated from the installed game data, rather than a hardcoded server list. Existing records refresh their world metadata from that catalog when the plugin starts.
 
 When the game's **Social → Friends** list is open, TooFriendly reads the native list and displays its companion panel beside it. Native friends are refreshed into local records, while locally stored-only friends use your chosen color. TooFriendly never writes to the game's server-backed friends list or bypasses its 200-friend limit.
 
