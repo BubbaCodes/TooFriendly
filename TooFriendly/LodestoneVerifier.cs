@@ -12,11 +12,11 @@ namespace TooFriendly;
 internal sealed record LodestoneLookupRequest(
     Guid FriendId,
     string Name,
-    string World,
-    uint RegionId);
+    string HomeWorld,
+    uint LodestoneRegionId);
 
 internal sealed record LodestoneLookupResult(
-    Guid FriendId,
+    LodestoneLookupRequest Request,
     CharacterVerificationStatus Status,
     DateTime CompletedAtUtc,
     string Message);
@@ -120,7 +120,7 @@ internal sealed class LodestoneVerifier : IDisposable
                 {
                     log.Error(exception, "A TooFriendly Lodestone lookup failed.");
                     result = new LodestoneLookupResult(
-                        request.FriendId,
+                        request,
                         CharacterVerificationStatus.LookupFailed,
                         DateTime.UtcNow,
                         "Lookup failed. Check the log or try again later.");
@@ -146,7 +146,7 @@ internal sealed class LodestoneVerifier : IDisposable
         LodestoneLookupRequest request,
         CancellationToken cancellationToken)
     {
-        var host = request.RegionId switch
+        var host = request.LodestoneRegionId switch
         {
             1 => "jp.finalfantasyxiv.com",
             2 => "na.finalfantasyxiv.com",
@@ -157,14 +157,14 @@ internal sealed class LodestoneVerifier : IDisposable
         if (host == null)
         {
             return new LodestoneLookupResult(
-                request.FriendId,
+                request,
                 CharacterVerificationStatus.LookupFailed,
                 DateTime.UtcNow,
                 "The saved Home World belongs to an unsupported Lodestone region.");
         }
 
         var url =
-            $"https://{host}/lodestone/character/?q={Uri.EscapeDataString(request.Name)}&worldname={Uri.EscapeDataString(request.World)}";
+            $"https://{host}/lodestone/character/?q={Uri.EscapeDataString(request.Name)}&worldname={Uri.EscapeDataString(request.HomeWorld)}";
 
         using var response = await httpClient.GetAsync(url, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -181,7 +181,7 @@ internal sealed class LodestoneVerifier : IDisposable
                 ? "Lodestone is rate-limiting checks. Try again later."
                 : $"Lodestone returned HTTP {(int)response.StatusCode}. Try again later.";
             return new LodestoneLookupResult(
-                request.FriendId,
+                request,
                 CharacterVerificationStatus.LookupFailed,
                 DateTime.UtcNow,
                 message);
@@ -194,10 +194,10 @@ internal sealed class LodestoneVerifier : IDisposable
             var world = DecodeText(match.Groups["world"].Value);
             var worldName = world.Split('[', 2)[0].Trim();
             if (string.Equals(name, request.Name, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(worldName, request.World, StringComparison.OrdinalIgnoreCase))
+                string.Equals(worldName, request.HomeWorld, StringComparison.OrdinalIgnoreCase))
             {
                 return new LodestoneLookupResult(
-                    request.FriendId,
+                    request,
                     CharacterVerificationStatus.Found,
                     DateTime.UtcNow,
                     string.Empty);
@@ -207,14 +207,14 @@ internal sealed class LodestoneVerifier : IDisposable
         if (html.Contains("parts__zero", StringComparison.Ordinal))
         {
             return new LodestoneLookupResult(
-                request.FriendId,
+                request,
                 CharacterVerificationStatus.NotFound,
                 DateTime.UtcNow,
                 "Not found on Lodestone. The profile may be private; confirm before removing.");
         }
 
         return new LodestoneLookupResult(
-            request.FriendId,
+            request,
             CharacterVerificationStatus.LookupFailed,
             DateTime.UtcNow,
             "Lodestone's result format was not recognized. No existence result was recorded.");

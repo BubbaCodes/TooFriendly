@@ -21,6 +21,7 @@ public sealed class FriendListWindow : Window
     private string validationMessage = string.Empty;
     private string syncWarning = string.Empty;
     private FriendRecord? selectedFriend;
+    private FriendRecord? editingFriend;
     private bool wasSocialVisible;
     private bool openedBySocial;
 
@@ -172,7 +173,15 @@ public sealed class FriendListWindow : Window
                         ImGui.SameLine();
                         if (ImGui.SmallButton("Check"))
                             queueCharacterCheck(friend);
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip("Rechecks this character on the official Lodestone.");
                     }
+
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("Edit"))
+                        BeginEditing(friend);
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip("Edit this saved record.");
 
                     ImGui.SameLine();
                     if (ImGui.SmallButton("Remove"))
@@ -180,10 +189,17 @@ public sealed class FriendListWindow : Window
                         configuration.Friends.RemoveAt(i);
                         if (ReferenceEquals(selectedFriend, friend))
                             selectedFriend = null;
+                        if (ReferenceEquals(editingFriend, friend))
+                            CancelEditing();
                         configuration.Save();
                         friendRemoved = true;
                         ImGui.PopID();
                         break;
+                    }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip(
+                            "Removes this record from TooFriendly only; it does not change your in-game friends list.");
                     }
 
                     ImGui.PopID();
@@ -196,8 +212,12 @@ public sealed class FriendListWindow : Window
         }
         ImGui.EndChild();
 
+        ImGui.TextDisabled(
+            "Check rechecks a character on Lodestone. Remove deletes only the local record, not your in-game friend.");
+
         if (selectedFriend != null)
         {
+            ImGui.TextDisabled($"Home World: {selectedFriend.World} ({selectedFriend.DataCenter})");
             var meetingDetails = string.Join(
                 " / ",
                 new[] { selectedFriend.MetDataCenter, selectedFriend.MetWorld, selectedFriend.City }
@@ -224,56 +244,135 @@ public sealed class FriendListWindow : Window
         }
 
         ImGui.Separator();
-        ImGui.Text("Add a local record");
-        ImGui.InputText("Character name", ref name, 64);
-        if (ImGui.InputText("World", ref world, 64) &&
-            worldCatalog.TryGetByName(world, out var selectedWorld))
+        var isEditing = editingFriend != null;
+        var isEditingGameFriend = editingFriend?.IsGameFriend == true;
+        ImGui.Text(isEditing ? "Edit record" : "Add a local record");
+        if (isEditingGameFriend)
         {
-            world = selectedWorld.Name;
+            ImGui.Text($"Character name: {name}");
+            ImGui.Text($"Home World: {world}");
+            ImGui.TextDisabled("In-game friend names and Home Worlds are synchronized from FFXIV.");
+        }
+        else
+        {
+            ImGui.InputText("Character name", ref name, 64);
+
+            var hasSelectedWorld = worldCatalog.TryGetByName(world, out var selectedWorld);
+            var worldPreview = hasSelectedWorld
+                ? $"{selectedWorld.Name} ({selectedWorld.DataCenter})"
+                : "Select a Home World";
+            if (ImGui.BeginCombo("Home World", worldPreview))
+            {
+                foreach (var regionGroup in worldCatalog.Worlds.GroupBy(
+                             metadata => metadata.Region,
+                             StringComparer.OrdinalIgnoreCase))
+                {
+                    ImGui.Separator();
+                    ImGui.TextDisabled(regionGroup.Key);
+                    foreach (var dataCenterGroup in regionGroup.GroupBy(
+                                 metadata => metadata.DataCenter,
+                                 StringComparer.OrdinalIgnoreCase))
+                    {
+                        ImGui.TextDisabled(dataCenterGroup.Key);
+                        foreach (var metadata in dataCenterGroup)
+                        {
+                            var isSelected = string.Equals(
+                                world,
+                                metadata.Name,
+                                StringComparison.OrdinalIgnoreCase);
+                            if (ImGui.Selectable(
+                                    $"{metadata.Name}##home-world-{metadata.Id}",
+                                    isSelected))
+                            {
+                                world = metadata.Name;
+                            }
+
+                            if (isSelected)
+                                ImGui.SetItemDefaultFocus();
+                        }
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            if (hasSelectedWorld)
+                ImGui.TextDisabled($"Home Data Center: {selectedWorld.DataCenter}");
         }
 
-        if (worldCatalog.TryGetByName(world, out var metadata))
-            ImGui.TextDisabled($"Data center: {metadata.DataCenter}");
+        if (!isEditing)
+        {
+            var currentMeetingLocation = getMeetingLocation();
+            var currentMeetingDetails = string.Join(
+                " / ",
+                new[] { currentMeetingLocation.DataCenter, currentMeetingLocation.World, currentMeetingLocation.Place }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+            ImGui.TextDisabled(
+                string.IsNullOrWhiteSpace(currentMeetingDetails)
+                    ? "Meeting location: unavailable"
+                    : $"Meeting location: {currentMeetingDetails}");
+        }
 
-        var currentMeetingLocation = getMeetingLocation();
-        var currentMeetingDetails = string.Join(
-            " / ",
-            new[] { currentMeetingLocation.DataCenter, currentMeetingLocation.World, currentMeetingLocation.Place }
-                .Where(value => !string.IsNullOrWhiteSpace(value)));
-        ImGui.TextDisabled(
-            string.IsNullOrWhiteSpace(currentMeetingDetails)
-                ? "Meeting location: unavailable"
-                : $"Meeting location: {currentMeetingDetails}");
         ImGui.InputText("Location (optional override)", ref city, 64);
         ImGui.InputText("When/how you met", ref metNote, 256);
 
         if (!string.IsNullOrEmpty(validationMessage))
             ImGui.TextColored(new Vector4(1f, 0.65f, 0.2f, 1f), validationMessage);
 
-        if (ImGui.Button("Add friend"))
-            AddFriend();
+        if (ImGui.Button(isEditing ? "Save changes" : "Add friend"))
+            SaveRecord();
+
+        if (isEditing)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel edit"))
+                CancelEditing();
+        }
 
         ImGui.Separator();
         ImGui.TextWrapped("Character checks query the official Lodestone directly from this computer. TooFriendly does not send records to its own server.");
     }
 
-    private void AddFriend()
+    private void BeginEditing(FriendRecord friend)
     {
+        editingFriend = friend;
+        selectedFriend = friend;
+        name = friend.Name;
+        world = friend.World;
+        city = friend.City;
+        metNote = friend.MetNote;
+        validationMessage = string.Empty;
+    }
+
+    private void CancelEditing()
+    {
+        editingFriend = null;
+        name = string.Empty;
+        world = string.Empty;
+        city = string.Empty;
+        metNote = string.Empty;
+        validationMessage = string.Empty;
+    }
+
+    private void SaveRecord()
+    {
+        var currentEdit = editingFriend;
+        var canEditIdentity = currentEdit?.IsGameFriend != true;
         var trimmedName = name.Trim();
         var trimmedWorld = world.Trim();
-        if (trimmedName.Length == 0 || trimmedWorld.Length == 0)
+        if ((canEditIdentity && trimmedName.Length == 0) || trimmedWorld.Length == 0)
         {
-            validationMessage = "Character name and world are required.";
+            validationMessage = "Character name and Home World are required.";
             return;
         }
 
         if (!worldCatalog.TryGetByName(trimmedWorld, out var metadata))
         {
-            validationMessage = "Enter a current FFXIV Home World name.";
+            validationMessage = "Select a current FFXIV Home World.";
             return;
         }
 
-        if (configuration.Friends.Count >= configuration.FriendLimit)
+        if (currentEdit == null && configuration.Friends.Count >= configuration.FriendLimit)
         {
             validationMessage = "The local friend limit has been reached.";
             return;
@@ -281,34 +380,71 @@ public sealed class FriendListWindow : Window
 
         foreach (var friend in configuration.Friends)
         {
-            if (string.Equals(friend.Name, trimmedName, StringComparison.OrdinalIgnoreCase) &&
-                (friend.HomeWorldId == metadata.Id ||
-                 string.Equals(friend.World, metadata.Name, StringComparison.OrdinalIgnoreCase)))
+            if (ReferenceEquals(friend, currentEdit))
+                continue;
+
+            var sameContentId = currentEdit?.ContentId is > 0 &&
+                                friend.ContentId == currentEdit.ContentId;
+            var sameHomeIdentity = canEditIdentity &&
+                                   string.Equals(friend.Name, trimmedName, StringComparison.OrdinalIgnoreCase) &&
+                                   (friend.HomeWorldId == metadata.Id ||
+                                    string.Equals(friend.World, metadata.Name, StringComparison.OrdinalIgnoreCase));
+            if (sameContentId || sameHomeIdentity)
             {
-                validationMessage = "That character is already in your local list.";
+                validationMessage = "That character already has a record in TooFriendly.";
                 return;
             }
         }
 
-        var meetingLocation = getMeetingLocation();
-        configuration.Friends.Add(new FriendRecord
+        if (currentEdit != null)
         {
-            Name = trimmedName,
-            World = metadata.Name,
-            DataCenter = metadata.DataCenter,
-            MetDataCenter = meetingLocation.DataCenter,
-            MetWorld = meetingLocation.World,
-            City = string.IsNullOrWhiteSpace(city) ? meetingLocation.Place : city.Trim(),
-            MetNote = metNote.Trim(),
-            HomeWorldId = metadata.Id,
-            LodestoneRegionId = metadata.RegionId,
-        });
-        configuration.Save();
+            var identityChanged = canEditIdentity &&
+                                  (!string.Equals(
+                                       currentEdit.Name,
+                                       trimmedName,
+                                       StringComparison.OrdinalIgnoreCase) ||
+                                   currentEdit.HomeWorldId != metadata.Id);
+            if (canEditIdentity)
+            {
+                currentEdit.Name = trimmedName;
+                currentEdit.World = metadata.Name;
+                currentEdit.DataCenter = metadata.DataCenter;
+                currentEdit.HomeWorldId = metadata.Id;
+                currentEdit.LodestoneRegionId = metadata.RegionId;
+            }
 
-        name = string.Empty;
-        world = string.Empty;
-        city = string.Empty;
-        metNote = string.Empty;
-        validationMessage = string.Empty;
+            if (identityChanged)
+            {
+                currentEdit.ContentId = 0;
+                currentEdit.VerificationStatus = CharacterVerificationStatus.NotChecked;
+                currentEdit.LastCheckedUtc = null;
+                currentEdit.VerificationMessage = string.Empty;
+            }
+
+            currentEdit.City = city.Trim();
+            currentEdit.MetNote = metNote.Trim();
+            selectedFriend = currentEdit;
+            CancelEditing();
+        }
+        else
+        {
+            var meetingLocation = getMeetingLocation();
+            configuration.Friends.Add(new FriendRecord
+            {
+                Name = trimmedName,
+                World = metadata.Name,
+                DataCenter = metadata.DataCenter,
+                MetDataCenter = meetingLocation.DataCenter,
+                MetWorld = meetingLocation.World,
+                City = string.IsNullOrWhiteSpace(city) ? meetingLocation.Place : city.Trim(),
+                MetNote = metNote.Trim(),
+                HomeWorldId = metadata.Id,
+                LodestoneRegionId = metadata.RegionId,
+            });
+
+            CancelEditing();
+        }
+
+        configuration.Save();
     }
 }

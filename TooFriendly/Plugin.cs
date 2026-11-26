@@ -255,12 +255,36 @@ public sealed class Plugin : IDalamudPlugin
                 changed = true;
             }
 
-            if (friend.HomeWorldId == 0 && worldCatalog.TryGetByName(friend.World, out var metadata))
+            if (!worldCatalog.TryGetById(friend.HomeWorldId, out var metadata) &&
+                !worldCatalog.TryGetByName(friend.World, out metadata))
+            {
+                continue;
+            }
+
+            var homeWorldChanged =
+                (friend.HomeWorldId != 0 && friend.HomeWorldId != metadata.Id) ||
+                (!string.IsNullOrWhiteSpace(friend.World) &&
+                 !string.Equals(friend.World, metadata.Name, StringComparison.OrdinalIgnoreCase));
+            var lookupRegionChanged = friend.LodestoneRegionId != metadata.RegionId;
+            if (friend.HomeWorldId != metadata.Id ||
+                friend.World != metadata.Name ||
+                friend.DataCenter != metadata.DataCenter ||
+                friend.LodestoneRegionId != metadata.RegionId)
             {
                 friend.HomeWorldId = metadata.Id;
-                friend.LodestoneRegionId = metadata.RegionId;
                 friend.World = metadata.Name;
                 friend.DataCenter = metadata.DataCenter;
+                friend.LodestoneRegionId = metadata.RegionId;
+                changed = true;
+            }
+
+            if (!friend.IsGameFriend && (homeWorldChanged || lookupRegionChanged))
+            {
+                if (homeWorldChanged)
+                    friend.ContentId = 0;
+                friend.VerificationStatus = CharacterVerificationStatus.NotChecked;
+                friend.LastCheckedUtc = null;
+                friend.VerificationMessage = string.Empty;
                 changed = true;
             }
         }
@@ -434,9 +458,17 @@ public sealed class Plugin : IDalamudPlugin
         var changed = false;
         while (lodestoneVerifier.TryDequeueResult(out var result))
         {
-            var friend = Configuration.Friends.FirstOrDefault(candidate => candidate.Id == result.FriendId);
+            var request = result.Request;
+            var friend = Configuration.Friends.FirstOrDefault(candidate => candidate.Id == request.FriendId);
             if (friend == null || friend.IsGameFriend)
                 continue;
+
+            if (!string.Equals(friend.Name, request.Name, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(friend.World, request.HomeWorld, StringComparison.OrdinalIgnoreCase) ||
+                friend.LodestoneRegionId != request.LodestoneRegionId)
+            {
+                continue;
+            }
 
             friend.VerificationStatus = result.Status;
             friend.LastCheckedUtc = result.CompletedAtUtc;
