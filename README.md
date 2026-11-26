@@ -16,6 +16,8 @@ TooFriendly keeps a local companion list with a configurable limit (1-1,000), no
 
 When the game's **Social → Friends** list is open, TooFriendly reads the native list and displays its companion panel beside it. Native friends are refreshed into local records, while locally stored-only friends use your chosen color. TooFriendly never writes to the game's server-backed friends list or bypasses its 200-friend limit.
 
+Use a player character's context menu and select **Add to TooFriendly** to save their name and Home World locally. The option is disabled if they are already saved or the configured list is full.
+
 Stored-only friends are checked against the official Lodestone when needed. Requests are made directly from your computer, one at a time with a delay, and only the character name and Home World are sent to Square Enix. TooFriendly has no companion server. A character not appearing in Lodestone search is marked for review, not automatically removed; private profiles or changes to Lodestone can prevent confirmation.
 
 The nearby heart appears when a friend is present in your current game instance and within the configurable range. It does not appear for friends who are offline or in another instance.

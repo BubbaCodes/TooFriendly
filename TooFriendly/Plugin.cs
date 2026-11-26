@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Game.Command;
+using Dalamud.Game.Gui.ContextMenu;
 using Dalamud.IoC;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -21,6 +22,12 @@ public sealed class Plugin : IDalamudPlugin
 
     [PluginService]
     internal static ICommandManager CommandManager { get; private set; } = null!;
+
+    [PluginService]
+    internal static IContextMenu ContextMenuService { get; private set; } = null!;
+
+    [PluginService]
+    internal static IChatGui ChatGui { get; private set; } = null!;
 
     [PluginService]
     internal static IDataManager DataManager { get; private set; } = null!;
@@ -76,6 +83,7 @@ public sealed class Plugin : IDalamudPlugin
         });
 
         Framework.Update += OnFrameworkUpdate;
+        ContextMenuService.OnMenuOpened += OnMenuOpened;
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi += friendListWindow.Toggle;
     }
@@ -83,11 +91,76 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         Framework.Update -= OnFrameworkUpdate;
+        ContextMenuService.OnMenuOpened -= OnMenuOpened;
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
         PluginInterface.UiBuilder.OpenMainUi -= friendListWindow.Toggle;
         CommandManager.RemoveHandler(CommandName);
         windowSystem.RemoveAllWindows();
         lodestoneVerifier.Dispose();
+    }
+
+    private void OnMenuOpened(IMenuOpenedArgs args)
+    {
+        if (args.MenuType != ContextMenuType.Default ||
+            args.Target is not MenuTargetDefault target ||
+            string.IsNullOrWhiteSpace(target.TargetName))
+        {
+            return;
+        }
+
+        var targetName = target.TargetName.Trim();
+        var homeWorldId = checked((ushort)target.TargetHomeWorld.RowId);
+        if (homeWorldId == 0 || !worldCatalog.TryGetById(homeWorldId, out var world))
+            return;
+
+        var contentId = target.TargetContentId;
+        var exists = Configuration.Friends.Any(friend =>
+            (contentId != 0 && friend.ContentId == contentId) ||
+            (friend.HomeWorldId == world.Id &&
+             string.Equals(friend.Name, targetName, StringComparison.OrdinalIgnoreCase)));
+        var atLimit = Configuration.Friends.Count >= Configuration.FriendLimit;
+
+        args.AddMenuItem(new MenuItem
+        {
+            Name = exists
+                ? "Already in TooFriendly"
+                : atLimit
+                    ? "TooFriendly list is full"
+                    : "Add to TooFriendly",
+            IsEnabled = !exists && !atLimit,
+            OnClicked = _ => AddCharacterFromMenu(targetName, world, contentId),
+        });
+    }
+
+    private void AddCharacterFromMenu(string name, WorldMetadata world, ulong contentId)
+    {
+        var exists = Configuration.Friends.Any(friend =>
+            (contentId != 0 && friend.ContentId == contentId) ||
+            (friend.HomeWorldId == world.Id &&
+             string.Equals(friend.Name, name, StringComparison.OrdinalIgnoreCase)));
+        if (exists)
+        {
+            ChatGui.PrintError($"{name} @ {world.Name} is already in TooFriendly.", "TooFriendly");
+            return;
+        }
+
+        if (Configuration.Friends.Count >= Configuration.FriendLimit)
+        {
+            ChatGui.PrintError("The TooFriendly friend limit has been reached.", "TooFriendly");
+            return;
+        }
+
+        Configuration.Friends.Add(new FriendRecord
+        {
+            Name = name,
+            World = world.Name,
+            DataCenter = world.DataCenter,
+            HomeWorldId = world.Id,
+            LodestoneRegionId = world.RegionId,
+            ContentId = contentId,
+        });
+        Configuration.Save();
+        ChatGui.Print($"Added {name} @ {world.Name} to TooFriendly.", "TooFriendly");
     }
 
     private unsafe void OnFrameworkUpdate(IFramework framework)

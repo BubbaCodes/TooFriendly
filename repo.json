@@ -5,7 +5,7 @@
     "Description": "Keep a local list of friends, notes, and meeting locations beyond the in-game friends list limit.",
     "Punchline": "A local companion for your Eorzean friends list.",
     "InternalName": "TooFriendly",
-    "AssemblyVersion": "0.2.0.0",
+    "AssemblyVersion": "0.2.1.0",
     "RepoUrl": "https://github.com/BubbaCodes/TooFriendly",
     "IconUrl": "https://raw.githubusercontent.com/BubbaCodes/TooFriendly/main/icon.png",
     "ApplicableVersion": "any",
