@@ -311,12 +311,15 @@ public sealed class FriendListWindow : Window
             }
             ImGui.EndDisabled();
 
-            var worlds = worldCatalog.Worlds
-                .Where(metadata =>
-                    string.Equals(metadata.Region, region, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(metadata.DataCenter, dataCenter, StringComparison.OrdinalIgnoreCase))
-                .Select(metadata => metadata.Name)
-                .ToArray();
+            var selectedDataCenterMetadata = worldCatalog.DataCenters.FirstOrDefault(metadata =>
+                string.Equals(metadata.Region, region, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(metadata.Name, dataCenter, StringComparison.OrdinalIgnoreCase));
+            var worlds = selectedDataCenterMetadata == null
+                ? Array.Empty<string>()
+                : worldCatalog.Worlds
+                    .Where(metadata => metadata.DataCenterId == selectedDataCenterMetadata.Id)
+                    .Select(metadata => metadata.Name)
+                    .ToArray();
             ImGui.BeginDisabled(worlds.Length == 0);
             if (DrawCombo(
                     "World (Server)",
@@ -411,9 +414,12 @@ public sealed class FriendListWindow : Window
             return;
         }
 
-        if (!worldCatalog.TryGetByName(trimmedWorld, out var metadata) ||
-            !string.Equals(metadata.Region, region, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(metadata.DataCenter, dataCenter, StringComparison.OrdinalIgnoreCase))
+        var selectedDataCenter = worldCatalog.DataCenters.FirstOrDefault(dataCenterMetadata =>
+            string.Equals(dataCenterMetadata.Region, region, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(dataCenterMetadata.Name, dataCenter, StringComparison.OrdinalIgnoreCase));
+        if (selectedDataCenter == null ||
+            !worldCatalog.TryGetByName(trimmedWorld, out var metadata) ||
+            metadata.DataCenterId != selectedDataCenter.Id)
         {
             validationMessage = "Select a Region, Data Center, and World.";
             return;

@@ -9,6 +9,7 @@ namespace TooFriendly;
 public sealed record WorldMetadata(
     ushort Id,
     string Name,
+    uint DataCenterId,
     string DataCenter,
     uint RegionId,
     string Region);
@@ -56,6 +57,7 @@ public sealed class WorldCatalog
             var metadata = new WorldMetadata(
                 checked((ushort)world.RowId),
                 name,
+                world.DataCenter.RowId,
                 dataCenter.Name.ToString().Trim(),
                 dataCenter.Region.RowId,
                 string.IsNullOrWhiteSpace(regionName)
