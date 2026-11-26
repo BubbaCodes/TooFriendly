@@ -1,5 +1,7 @@
 # TooFriendly
 
+![TooFriendly plugin icon](icon.png)
+
 TooFriendly is a Dalamud plugin for keeping a local companion list of FFXIV friends, including notes about when and where you met them.
 
 ## Install in-game
@@ -30,6 +32,6 @@ Build locally with the Dalamud SDK installed:
 dotnet build TooFriendly.slnx
 ```
 
-Push a version tag matching `TooFriendly.csproj` (for example, `v0.1.0`) to build the plugin package and publish a GitHub release. The repository manifest installs the latest release asset.
+Push a version tag matching `TooFriendly.csproj` (for example, `v0.1.1`) to build the plugin package and publish a GitHub release with the icon. The repository manifest installs the latest release asset and uses `icon.png` as the Dalamud plugin icon.
 
 In game, the `/toofriendly` command opens the plugin window.

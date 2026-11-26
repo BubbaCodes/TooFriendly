@@ -65,4 +65,8 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$env:GITHUB_REF_NAME" .\TooFriendly.zip --title "TooFriendly $env:GITHUB_REF_NAME" --notes "Dalamud plugin release."
+        shell: pwsh
+        run: |
+          $releaseTag = $env:GITHUB_REF_NAME
+          $releaseNotes = "Dalamud plugin release.`n`n![TooFriendly plugin icon](https://raw.githubusercontent.com/BubbaCodes/TooFriendly/$releaseTag/icon.png)"
+          gh release create "$releaseTag" .\TooFriendly.zip .\icon.png --title "TooFriendly $releaseTag" --notes $releaseNotes
