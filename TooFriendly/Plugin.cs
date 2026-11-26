@@ -534,6 +534,9 @@ public sealed class Plugin : IDalamudPlugin
         IReadOnlyList<INamePlateUpdateHandler> handlers)
     {
         friendNameplateIconsToDraw.Clear();
+        if (!Configuration.ShowNameplateHearts)
+            return;
+
         foreach (var handler in handlers)
         {
             var player = handler.PlayerCharacter;
@@ -604,6 +607,9 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawFriendNameplateIcons()
     {
+        if (!Configuration.ShowNameplateHearts)
+            return;
+
         var drawList = ImGui.GetForegroundDrawList();
         var color = ImGui.ColorConvertFloat4ToU32(new Vector4(0.35f, 1f, 0.45f, 1f));
         foreach (var position in friendNameplateIconsToDraw)

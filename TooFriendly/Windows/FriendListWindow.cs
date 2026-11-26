@@ -20,6 +20,7 @@ public sealed class FriendListWindow : Window
     private string metNote = string.Empty;
     private string validationMessage = string.Empty;
     private string syncWarning = string.Empty;
+    private FriendRecord? selectedFriend;
     private bool wasSocialVisible;
     private bool openedBySocial;
 
@@ -84,6 +85,13 @@ public sealed class FriendListWindow : Window
             configuration.Save();
         }
 
+        var showNameplateHearts = configuration.ShowNameplateHearts;
+        if (ImGui.Checkbox("Show nearby hearts on nameplates", ref showNameplateHearts))
+        {
+            configuration.ShowNameplateHearts = showNameplateHearts;
+            configuration.Save();
+        }
+
         var color = ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor);
         if (ImGui.ColorEdit4("Stored-only friend color", ref color))
         {
@@ -106,84 +114,114 @@ public sealed class FriendListWindow : Window
 
         if (ImGui.BeginChild("FriendRecords", new Vector2(0, 230), true))
         {
-            for (var i = 0; i < configuration.Friends.Count; i++)
+            var clipper = new ImGuiListClipper();
+            clipper.Begin(configuration.Friends.Count);
+            var friendRemoved = false;
+            while (clipper.Step())
             {
-                var friend = configuration.Friends[i];
-                ImGui.PushID(friend.Id.ToString());
-                if (friend.IsGameFriend)
-                    ImGui.Text($"{friend.Name} @ {friend.World}");
-                else
-                    ImGui.TextColored(
-                        ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor),
-                        $"{friend.Name} @ {friend.World}");
-
-                if (nearbyFriendIds.Contains(friend.Id))
+                for (var i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
                 {
+                    var friend = configuration.Friends[i];
+                    ImGui.PushID(friend.Id.ToString());
+                    var selected = ReferenceEquals(selectedFriend, friend);
+                    if (friend.IsGameFriend)
+                    {
+                        if (ImGui.Selectable($"{friend.Name} @ {friend.World}##name", selected))
+                            selectedFriend = friend;
+                    }
+                    else
+                    {
+                        ImGui.PushStyleColor(
+                            ImGuiCol.Text,
+                            ImGui.ColorConvertU32ToFloat4(configuration.StoredOnlyFriendColor));
+                        if (ImGui.Selectable($"{friend.Name} @ {friend.World}##name", selected))
+                            selectedFriend = friend;
+                        ImGui.PopStyleColor();
+                    }
+
+                    if (nearbyFriendIds.Contains(friend.Id))
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "♥");
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip("Nearby in the same instance.");
+                    }
+
+                    if (friend.VerificationStatus == CharacterVerificationStatus.NotFound)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(new Vector4(1f, 0.85f, 0.15f, 1f), "⚠ Not found");
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip(friend.VerificationMessage);
+                    }
+                    else if (friend.VerificationStatus == CharacterVerificationStatus.Checking)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextDisabled("Checking Lodestone...");
+                    }
+                    else if (!friend.IsGameFriend &&
+                             friend.VerificationStatus == CharacterVerificationStatus.Found)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "✓ Found");
+                    }
+
+                    if (!friend.IsGameFriend &&
+                        friend.VerificationStatus != CharacterVerificationStatus.Checking)
+                    {
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton("Check"))
+                            queueCharacterCheck(friend);
+                    }
+
                     ImGui.SameLine();
-                    ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "♥");
-                    if (ImGui.IsItemHovered())
-                        ImGui.SetTooltip("Nearby in the same instance.");
-                }
+                    if (ImGui.SmallButton("Remove"))
+                    {
+                        configuration.Friends.RemoveAt(i);
+                        if (ReferenceEquals(selectedFriend, friend))
+                            selectedFriend = null;
+                        configuration.Save();
+                        friendRemoved = true;
+                        ImGui.PopID();
+                        break;
+                    }
 
-                if (friend.VerificationStatus == CharacterVerificationStatus.NotFound)
-                {
-                    ImGui.SameLine();
-                    ImGui.TextColored(new Vector4(1f, 0.85f, 0.15f, 1f), "⚠ Not found");
-                    if (ImGui.IsItemHovered())
-                        ImGui.SetTooltip(friend.VerificationMessage);
-                }
-                else if (friend.VerificationStatus == CharacterVerificationStatus.Checking)
-                {
-                    ImGui.SameLine();
-                    ImGui.TextDisabled("Checking Lodestone...");
-                }
-                else if (!friend.IsGameFriend &&
-                         friend.VerificationStatus == CharacterVerificationStatus.Found)
-                {
-                    ImGui.SameLine();
-                    ImGui.TextColored(new Vector4(0.35f, 1f, 0.45f, 1f), "✓ Found");
-                }
-
-                var meetingDetails = string.Join(
-                    " / ",
-                    new[] { friend.MetDataCenter, friend.MetWorld, friend.City }
-                        .Where(value => !string.IsNullOrWhiteSpace(value)));
-                if (!string.IsNullOrWhiteSpace(meetingDetails))
-                    ImGui.TextDisabled($"Met: {meetingDetails}");
-                else if (!string.IsNullOrWhiteSpace(friend.DataCenter))
-                    ImGui.TextDisabled($"Home data center: {friend.DataCenter}");
-
-                if (!string.IsNullOrWhiteSpace(friend.MetNote))
-                    ImGui.TextWrapped(friend.MetNote);
-
-                if (friend.VerificationStatus == CharacterVerificationStatus.LookupFailed &&
-                    !string.IsNullOrWhiteSpace(friend.VerificationMessage))
-                {
-                    ImGui.TextColored(new Vector4(1f, 0.65f, 0.2f, 1f), friend.VerificationMessage);
-                }
-
-                if (!friend.IsGameFriend &&
-                    friend.VerificationStatus != CharacterVerificationStatus.Checking)
-                {
-                    ImGui.SameLine();
-                    if (ImGui.SmallButton("Check"))
-                        queueCharacterCheck(friend);
-                }
-
-                ImGui.SameLine();
-                if (ImGui.SmallButton("Remove"))
-                {
-                    configuration.Friends.RemoveAt(i);
-                    configuration.Save();
                     ImGui.PopID();
-                    break;
                 }
 
-                ImGui.Separator();
-                ImGui.PopID();
+                if (friendRemoved)
+                    break;
             }
+            clipper.End();
         }
         ImGui.EndChild();
+
+        if (selectedFriend != null)
+        {
+            var meetingDetails = string.Join(
+                " / ",
+                new[] { selectedFriend.MetDataCenter, selectedFriend.MetWorld, selectedFriend.City }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+            if (!string.IsNullOrWhiteSpace(meetingDetails))
+                ImGui.TextDisabled($"Met: {meetingDetails}");
+            else if (!string.IsNullOrWhiteSpace(selectedFriend.DataCenter))
+                ImGui.TextDisabled($"Home data center: {selectedFriend.DataCenter}");
+
+            if (!string.IsNullOrWhiteSpace(selectedFriend.MetNote))
+                ImGui.TextWrapped(selectedFriend.MetNote);
+
+            if (selectedFriend.VerificationStatus == CharacterVerificationStatus.LookupFailed &&
+                !string.IsNullOrWhiteSpace(selectedFriend.VerificationMessage))
+            {
+                ImGui.TextColored(
+                    new Vector4(1f, 0.65f, 0.2f, 1f),
+                    selectedFriend.VerificationMessage);
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("Select a friend to see saved notes and meeting details.");
+        }
 
         ImGui.Separator();
         ImGui.Text("Add a local record");

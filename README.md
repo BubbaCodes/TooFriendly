@@ -20,7 +20,7 @@ Use a player character's context menu and select **Add to TooFriendly** to save 
 
 Stored-only friends are checked against the official Lodestone when needed. Requests are made directly from your computer, one at a time with a delay, and only the character name and Home World are sent to Square Enix. TooFriendly has no companion server. A character not appearing in Lodestone search is marked for review, not automatically removed; private profiles or changes to Lodestone can prevent confirmation.
 
-The nearby heart appears above a visible nameplate when a friend is present in your current game instance and within the configurable range. It is intentionally small and does not appear for friends who are offline or in another instance.
+The nearby heart appears above a visible nameplate when a friend is present in your current game instance and within the configurable range. Toggle **Show nearby hearts on nameplates** in the friend-list window to hide or show these markers. Hearts do not appear for friends who are offline or in another instance.
 
 The plugin builds against Dalamud SDK 15. Addon placement and live game behavior still need validation in an active FFXIV client.
 

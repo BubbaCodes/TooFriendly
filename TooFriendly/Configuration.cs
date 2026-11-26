@@ -17,10 +17,11 @@ public enum CharacterVerificationStatus
 [Serializable]
 public sealed class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public int FriendLimit { get; set; } = 1000;
     public uint StoredOnlyFriendColor { get; set; } = 0xFF80D0FF;
     public float NearbyRangeYalms { get; set; } = 100f;
+    public bool ShowNameplateHearts { get; set; } = true;
     public List<FriendRecord> Friends { get; set; } = new();
 
     public void Save()
