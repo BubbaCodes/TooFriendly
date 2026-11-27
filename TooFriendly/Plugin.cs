@@ -188,6 +188,7 @@ public sealed class Plugin : IDalamudPlugin
             HomeWorldId = world.Id,
             LodestoneRegionId = world.RegionId,
             ContentId = contentId,
+            AddedAtUtc = DateTime.UtcNow,
         });
         Configuration.Save();
         ChatGui.Print($"Added {name} @ {world.Name} to TooFriendly.", "TooFriendly");
@@ -355,6 +356,7 @@ public sealed class Plugin : IDalamudPlugin
                     DataCenter = world.DataCenter,
                     HomeWorldId = world.Id,
                     LodestoneRegionId = world.RegionId,
+                    AddedAtUtc = DateTime.UtcNow,
                 };
                 Configuration.Friends.Add(friend);
                 changed = true;

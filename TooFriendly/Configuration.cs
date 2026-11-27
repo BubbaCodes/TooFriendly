@@ -45,6 +45,7 @@ public sealed class FriendRecord
     public uint LodestoneRegionId { get; set; }
     public ulong ContentId { get; set; }
     public bool IsGameFriend { get; set; }
+    public DateTime? AddedAtUtc { get; set; }
     public CharacterVerificationStatus VerificationStatus { get; set; }
     public DateTime? LastCheckedUtc { get; set; }
     public string VerificationMessage { get; set; } = string.Empty;

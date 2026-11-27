@@ -238,6 +238,9 @@ public sealed class FriendListWindow : Window
         if (selectedFriend != null)
         {
             ImGui.TextDisabled($"Home World: {selectedFriend.World} ({selectedFriend.DataCenter})");
+            ImGui.TextDisabled(selectedFriend.AddedAtUtc.HasValue
+                ? $"Added to TooFriendly: {selectedFriend.AddedAtUtc.Value.ToLocalTime():g} (local time)"
+                : "Added to TooFriendly: date unavailable for this older record");
             var meetingDetails = string.Join(
                 " / ",
                 new[] { selectedFriend.MetDataCenter, selectedFriend.MetWorld, selectedFriend.City }
@@ -493,6 +496,7 @@ public sealed class FriendListWindow : Window
                 MetNote = metNote.Trim(),
                 HomeWorldId = metadata.Id,
                 LodestoneRegionId = metadata.RegionId,
+                AddedAtUtc = DateTime.UtcNow,
             });
 
             CancelEditing();
